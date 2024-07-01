@@ -10,7 +10,7 @@ From the excellent software found at https://github.com/proto3/grbl/tree/hotwire
 
 This is an initial draft that suits my needs, but it would be beneficial to have the ability to select either the serial port or Telnet connection. In this fork version, I simply repurposed the serial port thread. There is still much work to be done, and I am unfamiliar with Python, but I believe this could be of interest to others.
 
- the rest is the original docs.
+The rest is the original docs.
 Pywing is a all-in-one software for hot wire foam CNC cutting. It can generate G-Code for other softwares or directly communicate with a 4-axis(XYUV) Grbl through serial link (see https://github.com/proto3/grbl/tree/hotwire).
 
 It has no drop down menus, so everything you need is visible. Just try scrolling on each field and you will see instantly what it does in the 3D view.
