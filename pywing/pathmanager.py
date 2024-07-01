@@ -131,10 +131,12 @@ class PathManagerWidget(QtGui.QWidget):
         self.reverse_btn.clicked.connect(self.on_reverse)
 
         self.scale_spbox = QtGui.QDoubleSpinBox()
-        self.scale_spbox.setRange(1, 10000)
+        self.scale_spbox.setRange(0, 10000)
         self.scale_spbox.setValue(self.pm.get_scale())
         self.scale_spbox.setPrefix("S : ")
         self.scale_spbox.setSuffix("mm")
+        self.scale_spbox.setDecimals(4)  # Définit le nombre de chiffres après la virgule
+
         self.scale_spbox.valueChanged.connect(self.on_scale)
 
         self.kerf_spbox = QtGui.QDoubleSpinBox()

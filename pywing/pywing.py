@@ -13,6 +13,8 @@ from cutparameters import *
 from graphicview import *
 
 from pathmanager import PathManager, PathManagerWidget
+#from machine import SerialThread  # Assurez-vous que vous importez SerialThread correctement
+
 
 class CutProcessor(QtCore.QObject):
     update = QtCore.pyqtSignal()
@@ -84,7 +86,7 @@ class CutProcessor(QtCore.QObject):
                           self._path_r[2][0],
                           self._path_l[0][0],
                           self._path_l[2][0])
-            gcode.append("G01 F%.3f X%.3f Y%.3f U%.3f V%.3f\n" % ((self.cut_param.feedrate,) + prev_pos))
+            gcode.append("G01 F%.3f X%.3f Y%.3f Z%.3f A%.3f\n" % ((self.cut_param.feedrate,) + prev_pos))
 
 
             for i in range(1, len(self._path_r[0])):
@@ -109,7 +111,7 @@ class CutProcessor(QtCore.QObject):
 
                 prev_pos = new_pos
                 prev_pos_s = new_pos_s
-                gcode.append("G01 F%.3f X%.3f Y%.3f U%.3f V%.3f\n" % ((m_dist / s_dist * self.cut_param.feedrate,) + new_pos))
+                gcode.append("G01 F%.3f X%.3f Y%.3f Z%.3f A%.3f\n" % ((m_dist / s_dist * self.cut_param.feedrate,) + new_pos))
 
         program = str()
         #TODO repair
@@ -253,15 +255,19 @@ class CutProcessor(QtCore.QObject):
 
 class CuttingProcessorWidget(QtGui.QWidget):
 
-    def __init__(self, cut_processor, machine):
+    def __init__(self, cut_processor, machine,serial_thread):
         super().__init__()
 
         self._cut_proc = cut_processor
         self._machine = machine
-        self.serial_thread = SerialThread(machine)
+        self.serial_thread = serial_thread
+        #self.serial_thread = SerialThread(machine)
+       # print("starting serial_thread")
+      # self.serial_thread.start()
+
+
         self.serial_thread.connection_changed.connect(self.on_connection_change)
-        self.serial_thread.port_list_changed.connect(self.on_port_list_change)
-        self.serial_thread.start()
+        self.serial_thread.position_changed.connect(self.update_position_display)  # Connecter le signal position_changed
 
         self.reverse_btn = QtGui.QPushButton("Reverse")
         self.reverse_btn.clicked.connect(self.on_reverse)
@@ -277,13 +283,69 @@ class CuttingProcessorWidget(QtGui.QWidget):
         self.play_btn.clicked.connect(self.on_play)
         self.stop_btn = QtGui.QPushButton("stop")
         self.stop_btn.clicked.connect(self.on_stop)
+        self.reset_btn = QtGui.QPushButton("Reset")
+        self.reset_btn.clicked.connect(self.on_reset)
+ # Jog buttons
+        self.jog_x_pos_btn = QtGui.QPushButton("X+")
+        self.jog_x_pos_btn.clicked.connect(lambda: self.jog_axis('X', 1))
+        self.jog_x_neg_btn = QtGui.QPushButton("X-")
+        self.jog_x_neg_btn.clicked.connect(lambda: self.jog_axis('X', -1))
+        self.jog_y_pos_btn = QtGui.QPushButton("Y+")
+        self.jog_y_pos_btn.clicked.connect(lambda: self.jog_axis('Y', 1))
+        self.jog_y_neg_btn = QtGui.QPushButton("Y-")
+        self.jog_y_neg_btn.clicked.connect(lambda: self.jog_axis('Y', -1))
+        self.jog_z_pos_btn = QtGui.QPushButton("Z+")
+        self.jog_z_pos_btn.clicked.connect(lambda: self.jog_axis('Z', 1))
+        self.jog_z_neg_btn = QtGui.QPushButton("Z-")
+        self.jog_z_neg_btn.clicked.connect(lambda: self.jog_axis('Z', -1))
+        self.jog_a_pos_btn = QtGui.QPushButton("A+")
+        self.jog_a_pos_btn.clicked.connect(lambda: self.jog_axis('A', 1))
+        self.jog_a_neg_btn = QtGui.QPushButton("A-")
+        self.jog_a_neg_btn.clicked.connect(lambda: self.jog_axis('A', -1))
+        self.zero_1_btn = QtGui.QPushButton("set zero1")
+        self.zero_1_btn.clicked.connect(lambda: self.setzero(1))
+        self.zero_2_btn = QtGui.QPushButton("set zero2")
+        self.zero_2_btn.clicked.connect(lambda: self.setzero(2))
+        self.gotoz_btn = QtGui.QPushButton("gotoz")
+        self.gotoz_btn.clicked.connect(lambda: self.gotozero())
 
-        self.port_box = QtGui.QComboBox()
-        self.port_box.setInsertPolicy(QtGui.QComboBox.InsertAlphabetically)
-        self.port_box.setSizeAdjustPolicy(QtGui.QComboBox.AdjustToContents)
+      
+        # Step size and feedrate input
+        self.step_size_label = QtGui.QLabel("Step Size:")
+        self.step_size_input = QtGui.QDoubleSpinBox()
+        self.step_size_input.setRange(0.01, 100.0)
+        self.step_size_input.setValue(1.0)  # default step size
 
+        self.feedrate_label = QtGui.QLabel("Feedrate:")
+        self.feedrate_input = QtGui.QDoubleSpinBox()
+        self.feedrate_input.setRange(1, 10000)
+        self.feedrate_input.setValue(300.0)  # default feedrate  
+        self.feedrate_input.setSingleStep(100)  # default stepfeedrate size      
+    
         self.serial_text_item = QtGui.QTextEdit()
         self.serial_data = ""
+
+
+        self.x_label = QtGui.QLabel("X: 0.000")
+        self.y_label = QtGui.QLabel("Y: 0.000")
+        self.z_label = QtGui.QLabel("Z: 0.000")
+        self.a_label = QtGui.QLabel("A: 0.000")
+
+# Set fixed size for jog buttons
+        button_size = QtCore.QSize(50, 50)
+        self.jog_x_pos_btn.setFixedSize(button_size)
+        self.jog_x_neg_btn.setFixedSize(button_size)
+        self.jog_y_pos_btn.setFixedSize(button_size)
+        self.jog_y_neg_btn.setFixedSize(button_size)
+        self.jog_z_pos_btn.setFixedSize(button_size)
+        self.jog_z_neg_btn.setFixedSize(button_size)
+        self.jog_a_pos_btn.setFixedSize(button_size)
+        self.jog_a_neg_btn.setFixedSize(button_size)
+        self.zero_1_btn.setFixedSize(button_size)
+        self.zero_2_btn.setFixedSize(button_size)
+
+
+ 
 
         layout = QtGui.QGridLayout()
         layout.addWidget(self.reverse_btn, 0, 0)
@@ -293,12 +355,80 @@ class CuttingProcessorWidget(QtGui.QWidget):
         layout.addWidget(self.serial_text_item, 0, 1, 4, 1)
         layout.setColumnStretch(0, 1)
         layout.setColumnStretch(1, 5)
-        layout.addWidget(self.port_box, 0, 6)
         layout.addWidget(self.connect_btn, 1, 6)
         layout.addWidget(self.play_btn, 2, 6)
         layout.addWidget(self.stop_btn, 3, 6)
+        layout.addWidget(self.reset_btn, 4, 6)
+        layout.addWidget(self.gotoz_btn, 4, 7)
+
+        # Jog button layout
+        jog_layout = QtGui.QGridLayout()
+        jog_layout.addWidget(self.jog_y_pos_btn, 0, 1)  # Y+
+        jog_layout.addWidget(self.jog_x_neg_btn, 1, 0)  # X-
+        jog_layout.addWidget(self.zero_1_btn, 1, 1)  # X-
+
+        jog_layout.addWidget(self.jog_x_pos_btn, 1, 2)  # X+
+        jog_layout.addWidget(self.jog_y_neg_btn, 2, 1)  # Y-
+
+        jog_layout.addWidget(self.jog_a_pos_btn, 0, 4)  # A+
+        jog_layout.addWidget(self.jog_z_neg_btn, 1, 3)  # Z-
+        jog_layout.addWidget(self.zero_2_btn, 1, 4)  # X-
+
+        jog_layout.addWidget(self.jog_z_pos_btn, 1, 5)  # Z+
+        jog_layout.addWidget(self.jog_a_neg_btn, 2, 4)  # A-
+        
+        # Add step size and feedrate inputs to the layout
+        layout.addWidget(self.step_size_label, 5, 0)
+        layout.addWidget(self.step_size_input, 5, 1)
+        layout.addWidget(self.feedrate_label, 6, 0)
+        layout.addWidget(self.feedrate_input, 6, 1)
+        layout.addLayout(jog_layout, 4, 0, 1, 2)
+
+        position_layout = QtGui.QVBoxLayout()
+        position_layout.addWidget(self.x_label)
+        position_layout.addWidget(self.y_label)
+        position_layout.addWidget(self.z_label)
+        position_layout.addWidget(self.a_label)
+        layout.addLayout(position_layout, 0, 7, 4, 1)
 
         self.setLayout(layout)
+    def update_position_display(self, mpos):
+        self.x_label.setText(f"X: {mpos[0]:.3f}")
+        self.y_label.setText(f"Y: {mpos[1]:.3f}")
+        self.z_label.setText(f"Z: {mpos[2]:.3f}")
+        self.a_label.setText(f"A: {mpos[3]:.3f}")
+
+    def jog_axis(self, axis, direction):
+        step_size = self.step_size_input.value()
+        feedrate = self.feedrate_input.value()
+        command = f"$J=G91 {axis}{direction * step_size} F{feedrate}"  # Example jog command for GRBL
+        #self.serial_thread.send_command(command)
+        self.serial_thread.play(command)
+
+    def on_reset(self):
+        self.reset_components()
+    def reset_components(self):
+        # Reset machine model
+        self.serial_thread = SerialThread(machine)
+
+
+
+    def gotozero(self):
+        command = "G0 X0 Y0 Z0 A0"  # Example jog command for GRBL
+        #self.serial_thread.send_command(command)
+        self.serial_thread.play(command)
+
+
+    def setzero(self, axis):
+        if axis == 1:
+            command = "G92 X0 Y0"  # Example jog command for GRBL
+            #self.serial_thread.send_command(command)
+            self.serial_thread.play(command)
+        else:
+            command = "G92 Z0 A0"  # Example jog command for GRBL
+            #self.serial_thread.send_command(command)
+            self.serial_thread.play(command)
+
 
     def on_connection_change(self):
         if(self.serial_thread.connecting):
@@ -313,30 +443,16 @@ class CuttingProcessorWidget(QtGui.QWidget):
 
         self.connect_btn.setText(text)
 
-    def on_port_list_change(self):
-        new_items = self.serial_thread.port_list
-        prev_items = []
-        for idx in range(self.port_box.count()):
-            prev_items.append(self.port_box.itemText(idx))
-
-        items_to_remove = list(set(prev_items) - set(new_items))
-        items_to_insert = list(set(new_items) - set(prev_items))
-        items_to_remove.sort()
-        items_to_insert.sort()
-
-        for item in items_to_remove:
-            self.port_box.removeItem(self.port_box.findText(item))
-
-        self.port_box.insertItems(0, items_to_insert)
-
+   
     def on_stop(self):
         self.serial_thread.stop()
+        self.serial_thread.start()
 
     def on_connect(self):
         if(self.serial_thread.connected):
             self.serial_thread.disconnect()
         else:
-            self.serial_thread.connect(self.port_box.currentText())
+            self.serial_thread.connect()
 
     def on_save(self):
         filename, _ = QtGui.QFileDialog.getSaveFileName(self.save_btn.parent(), "Save project", QtCore.QDir.homePath() +"/example.pw", ".pw Files (*.pw) ;; All Files (*)")
@@ -358,7 +474,8 @@ class CuttingProcessorWidget(QtGui.QWidget):
 
     def on_align(self):
         self._cut_proc.align()
-
+def on_finished():
+    print("Task Finished")
 if __name__ == '__main__':
     pg.setConfigOption('background', 'w')
     pg.setConfigOption('foreground', 'k')
@@ -369,6 +486,9 @@ if __name__ == '__main__':
     rel_color = (46, 134, 171)
 
     machine = MachineModel()
+    serial_thread = SerialThread(machine)  # Créez votre thread Telnet au lieu de Serial
+    serial_thread.start()
+    serial_thread.finishedSignal.connect(on_finished)
     path_manager_l = PathManager(rel_color)
     path_manager_r = PathManager(abs_color)
     path_widget_l = PathManagerWidget(path_manager_l)
@@ -385,10 +505,10 @@ if __name__ == '__main__':
 
     cut_proc = CutProcessor(machine, path_manager_l, path_manager_r, abs_pos_model, rel_pos_model, foam_block_model, cut_param_model)
 
-    gview = GraphicView(cut_proc, machine)
+    gview = GraphicView(cut_proc, machine,serial_thread)
     graphic_view_widget = gview.canvas.native
 
-    cutting_proc_widget = CuttingProcessorWidget(cut_proc, machine)
+    cutting_proc_widget = CuttingProcessorWidget(cut_proc, machine,serial_thread)
 
     top_widget = QtGui.QWidget()
     grid_layout = QtGui.QGridLayout()
